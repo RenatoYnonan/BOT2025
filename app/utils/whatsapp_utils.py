@@ -3,8 +3,30 @@ from flask import current_app, jsonify
 import json
 import requests
 
-# from app.services.openai_service import generate_response
+from app.services.openai_service import generate_response, transcribe_audio
 import re
+
+
+def get_media_url_and_download(media_id):
+    headers = {
+        "Authorization": f"Bearer {current_app.config['ACCESS_TOKEN']}"
+    }
+
+    # Paso 1: obtener la URL temporal del archivo de audio
+    meta_url = f"https://graph.facebook.com/v18.0/{media_id}"
+    meta_response = requests.get(meta_url, headers=headers)
+    
+    if meta_response.status_code != 200:
+        raise Exception(f"Error getting media URL: {meta_response.text}")
+
+    file_url = meta_response.json().get("url")
+
+    # Paso 2: descargar el archivo de audio
+    audio_response = requests.get(file_url, headers=headers)
+    if audio_response.status_code != 200:
+        raise Exception(f"Error downloading audio file: {audio_response.text}")
+
+    return audio_response.content 
 
 
 def log_http_response(response):
@@ -25,10 +47,18 @@ def get_text_message_input(recipient, text):
     )
 
 
-def generate_response(response):
+#def generate_response(response):
     # Return text in uppercase
-    return response.upper()
+    #return response.upper()
 
+def process_audio_message(media_id, wa_id, name):
+    audio_bytes = get_media_url_and_download(media_id)
+    transcript_text = transcribe_audio(audio_bytes)
+
+    response = generate_response(transcript_text, wa_id, name)
+    response = process_text_for_whatsapp(response)
+    data = get_text_message_input(wa_id, response)
+    send_message(data)
 
 def send_message(data):
     headers = {
@@ -76,21 +106,72 @@ def process_text_for_whatsapp(text):
 
 
 def process_whatsapp_message(body):
+    message = body["entry"][0]["changes"][0]["value"]["messages"][0]
+    msg_type = message.get("type")
     wa_id = body["entry"][0]["changes"][0]["value"]["contacts"][0]["wa_id"]
     name = body["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"]
 
-    message = body["entry"][0]["changes"][0]["value"]["messages"][0]
-    message_body = message["text"]["body"]
+    if msg_type == "audio":
+        media_id = message["audio"]["id"]
+        process_audio_message(media_id, wa_id, name)
+        return
 
-    # TODO: implement custom function here
-    response = generate_response(message_body)
+    if msg_type == "text":
+        message_body = message["text"]["body"]
+        response = generate_response(message_body, wa_id, name)
 
-    # OpenAI Integration
-    # response = generate_response(message_body, wa_id, name)
-    # response = process_text_for_whatsapp(response)
+        # Codigo de inicio de cotización
+        # Verificar si la respuesta contiene el trigger final
+        if "FIN_COTIZACION" in response:
+            # Intentar extraer los datos con expresiones regulares
+            try:
+                nombre = re.search(r"Nombre:\s*(.*)", response).group(1).strip()
+            except AttributeError:
+                nombre = "No proporcionado"
 
-    data = get_text_message_input(current_app.config["RECIPIENT_WAID"], response)
-    send_message(data)
+            try:
+                telefono = re.search(r"Teléfono:\s*(.*)", response).group(1).strip()
+            except AttributeError:
+                telefono = "No proporcionado"
+
+            try:
+                correo = re.search(r"Correo:\s*(.*)", response).group(1).strip()
+            except AttributeError:
+                correo = "No proporcionado"
+
+            try:
+                ciudad = re.search(r"Ciudad:\s*(.*)", response).group(1).strip()
+            except AttributeError:
+                ciudad = "No proporcionado"
+
+            # Armar el mensaje resumen
+            resumen = f"""📄 *Nueva cotización recibida*:
+
+        👤 *Nombre/RUC:* {nombre}
+        📞 *Teléfono:* {telefono}
+        ✉️ *Correo:* {correo}
+        📍 *Ciudad:* {ciudad}
+        """
+
+            # Enviar al encargado por WhatsApp
+            encargado_wa_id = "51992669198"  # Cambia esto por el número real del encargado
+            data_encargado = get_text_message_input(encargado_wa_id, resumen)
+            send_message(data_encargado)
+
+            # Confirmar al cliente
+            confirmacion = "✅ Gracias, tu solicitud fue enviada al área de cotizaciones. Te contactaremos pronto."
+            data_cliente = get_text_message_input(wa_id, confirmacion)
+            send_message(data_cliente)
+
+            # No seguir procesando
+            return
+
+
+        # Codigo de fin de cotizacion
+        response = process_text_for_whatsapp(response)
+        data = get_text_message_input(wa_id, response)
+        send_message(data)
+
 
 
 def is_valid_whatsapp_message(body):

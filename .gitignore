@@ -89,3 +89,8 @@ target/
 
 # Exlcude the database file
 .db
+
+# Archivos de base de datos shelve
+*.bak
+*.dat
+*.dir

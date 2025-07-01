@@ -4,11 +4,25 @@ from dotenv import load_dotenv
 import os
 import time
 import logging
+from io import BytesIO
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+def transcribe_audio(audio_bytes):
+    audio_file = BytesIO(audio_bytes)
+    audio_file.name = "audio.ogg"  # WhatsApp usualmente usa OGG
+
+    transcript = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_file,
+        response_format="text"
+    )
+
+    return transcript
 
 
 def upload_file(path):
