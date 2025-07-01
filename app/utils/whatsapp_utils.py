@@ -60,6 +60,42 @@ def process_audio_message(media_id, wa_id, name):
     data = get_text_message_input(wa_id, response)
     send_message(data)
 
+
+def send_template_message(wa_id, nombre, telefono, correo, ciudad):
+    url = f"https://graph.facebook.com/v22.0/{current_app.config['PHONE_NUMBER_ID']}/messages"
+    headers = {
+        "Authorization": f"Bearer {current_app.config['ACCESS_TOKEN']}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": wa_id,
+        "type": "template",
+        "template": {
+            "name": "nueva_cotizacion",
+            "language": {"code": "us"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": nombre},
+                        {"type": "text", "text": telefono},
+                        {"type": "text", "text": correo},
+                        {"type": "text", "text": ciudad}
+                    ]
+                }
+            ]
+        }
+    }
+    
+    response = requests.post(url, headers=headers, json=payload)
+    print("STATUS:", response.status_code)
+    print("RESPONSE:", response.text)
+    return response
+
+
+
+
 def send_message(data):
     headers = {
         "Content-type": "application/json",
@@ -144,19 +180,16 @@ def process_whatsapp_message(body):
             except AttributeError:
                 ciudad = "No proporcionado"
 
-            # Armar el mensaje resumen
-            resumen = f"""📄 *Nueva cotización recibida*:
-
-        👤 *Nombre/RUC:* {nombre}
-        📞 *Teléfono:* {telefono}
-        ✉️ *Correo:* {correo}
-        📍 *Ciudad:* {ciudad}
-        """
-
             # Enviar al encargado por WhatsApp
             encargado_wa_id = "51992669198"  # Cambia esto por el número real del encargado
-            data_encargado = get_text_message_input(encargado_wa_id, resumen)
-            send_message(data_encargado)
+            send_template_message(
+                encargado_wa_id,
+                nombre,
+                telefono,
+                correo,
+                ciudad
+            )
+
 
             # Confirmar al cliente
             confirmacion = "✅ Gracias, tu solicitud fue enviada al área de cotizaciones. Te contactaremos pronto."
