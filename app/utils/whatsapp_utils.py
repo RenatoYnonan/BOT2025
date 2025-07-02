@@ -73,7 +73,7 @@ def send_template_message(wa_id, nombre, telefono, correo, ciudad):
         "type": "template",
         "template": {
             "name": "nueva_cotizacion",
-            "language": {"code": "en_US"},
+            "language": {"code": "en"},
             "components": [
                 {
                     "type": "body",
